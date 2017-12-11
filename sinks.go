@@ -1,6 +1,7 @@
 package cache
 
 import "errors"
+import "encoding/json"
 
 // A Sink receives data from a Get call.
 type Sink interface {
@@ -9,6 +10,9 @@ type Sink interface {
 
 	// SetBytes sets the value to the contents of v.
 	SetBytes(v []byte) error
+
+	// SetJSON sets the value to the encoded version of m.
+	SetJSON(m interface{}) error
 
 	// view returns a frozen view of the bytes for caching.
 	view() (ByteView, error)
@@ -52,6 +56,16 @@ func (s *stringSink) SetBytes(v []byte) error {
 	return s.SetString(string(v))
 }
 
+func (s *stringSink) SetJSON(m interface{}) error {
+	b, err := json.Marshal(m)
+	if err != nil {
+		return err
+	}
+	s.v.b = b
+	*s.sp = string(b)
+	return nil
+}
+
 // ByteViewSink returns a Sink that populates a ByteView.
 func ByteViewSink(dst *ByteView) Sink {
 	if dst == nil {
@@ -80,6 +94,15 @@ func (s *byteViewSink) SetBytes(b []byte) error {
 
 func (s *byteViewSink) SetString(v string) error {
 	*s.dst = ByteView{s: v}
+	return nil
+}
+
+func (s *byteViewSink) SetJSON(m interface{}) error {
+	b, err := json.Marshal(m)
+	if err != nil {
+		return err
+	}
+	*s.dst = ByteView{b: b}
 	return nil
 }
 
@@ -130,5 +153,67 @@ func (s *allocBytesSink) SetString(v string) error {
 	*s.dst = []byte(v)
 	s.v.b = nil
 	s.v.s = v
+	return nil
+}
+
+func (s *allocBytesSink) SetJSON(m interface{}) error {
+	b, err := json.Marshal(m)
+	if err != nil {
+		return err
+	}
+	return s.setBytesOwned(b)
+}
+
+// JSONSink returns a sink that unmarshals binary values into m.
+func JSONSink(m interface{}) Sink {
+	return &jsonSink{
+		dst: m,
+	}
+}
+
+type jsonSink struct {
+	dst interface{}
+	typ string
+
+	v ByteView
+}
+
+func (s *jsonSink) view() (ByteView, error) {
+	return s.v, nil
+}
+
+func (s *jsonSink) SetBytes(b []byte) error {
+	err := json.Unmarshal(b, s.dst)
+	if err != nil {
+		return err
+	}
+	s.v.b = cloneBytes(b)
+	s.v.s = ""
+	return nil
+}
+
+func (s *jsonSink) SetString(v string) error {
+	b := []byte(v)
+	err := json.Unmarshal(b, s.dst)
+	if err != nil {
+		return err
+	}
+	s.v.b = b
+	s.v.s = ""
+	return nil
+}
+
+func (s *jsonSink) SetJSON(m interface{}) error {
+	b, err := json.Marshal(m)
+	if err != nil {
+		return err
+	}
+
+	err = json.Unmarshal(b, s.dst)
+	if err != nil {
+		return err
+	}
+	s.v.b = b
+	s.v.s = ""
 	return nil
 }
