@@ -1,7 +1,10 @@
 package cache
 
 import (
+	"errors"
 	"sync"
+
+	"github.com/FeiniuBus/cache/singleflight"
 )
 
 // A Getter loads data for a key.
@@ -46,6 +49,7 @@ func NewStore(name string, cacheBytes int64, getter Getter) *Store {
 		name:       name,
 		getter:     getter,
 		cacheBytes: cacheBytes,
+		loadStore:  &singleflight.Store{},
 	}
 	stores[name] = s
 	return s
@@ -56,6 +60,24 @@ type Store struct {
 	name       string
 	getter     Getter
 	cacheBytes int64
+	cache      cache
+	loadStore  flightStore
+	_          int32
+	Stats      Stats
+}
+
+type flightStore interface {
+	Do(key string, fn func() (interface{}, error)) (interface{}, error)
+}
+
+// Stats are store statistics.
+type Stats struct {
+	Gets          AtomicInt
+	CacheHits     AtomicInt
+	Loads         AtomicInt
+	LoadsDeduped  AtomicInt
+	LocalLoadErrs AtomicInt
+	LocalLoads    AtomicInt
 }
 
 // Name returns the name of the store.
@@ -65,12 +87,84 @@ func (s *Store) Name() string {
 
 // Get is
 func (s *Store) Get(key string, dest Sink) error {
-	return nil
+	s.Stats.Gets.Add(1)
+	if dest == nil {
+		return errors.New("store: nil dest Sink")
+	}
+	value, cacheHit := s.lookupCache(key)
+
+	if cacheHit {
+		s.Stats.CacheHits.Add(1)
+		return setSinkView(dest, value)
+	}
+
+	destPopulated := false
+	value, destPopulated, err := s.load(key, dest)
+	if err != nil {
+		return err
+	}
+	if destPopulated {
+		return nil
+	}
+	return setSinkView(dest, value)
 }
 
-func (s *Store) lookupCache(key string) (value []byte, ok bool) {
+// load loads key by invoking the getter locally
+func (s *Store) load(key string, dest Sink) (value ByteView, destPopulated bool, err error) {
+	s.Stats.Loads.Add(1)
+	viewi, err := s.loadStore.Do(key, func() (interface{}, error) {
+		if value, cacheHit := s.lookupCache(key); cacheHit {
+			s.Stats.CacheHits.Add(1)
+			return value, nil
+		}
+		s.Stats.LoadsDeduped.Add(1)
+		var value ByteView
+		var err error
+		value, err = s.getLocally(key, dest)
+		if err != nil {
+			s.Stats.LocalLoadErrs.Add(1)
+			return nil, err
+		}
+		s.Stats.LocalLoads.Add(1)
+		destPopulated = true
+		s.populateCache(key, value)
+		return value, nil
+	})
+	if err == nil {
+		value = viewi.(ByteView)
+	}
+	return
+}
+
+func (s *Store) getLocally(key string, dest Sink) (ByteView, error) {
+	err := s.getter.Get(key, dest)
+	if err != nil {
+		return ByteView{}, err
+	}
+	return dest.view()
+}
+
+func (s *Store) lookupCache(key string) (value ByteView, ok bool) {
 	if s.cacheBytes <= 0 {
 		return
 	}
-	return nil, false
+	value, ok = s.cache.get(key)
+	return
+}
+
+func (s *Store) populateCache(key string, value ByteView) {
+	if s.cacheBytes <= 0 {
+		return
+	}
+	s.cache.add(key, value)
+
+	for {
+		cacheBytes := s.cache.bytes()
+		if cacheBytes <= s.cacheBytes {
+			return
+		}
+
+		victim := &s.cache
+		victim.removeOldest()
+	}
 }
