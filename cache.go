@@ -62,6 +62,14 @@ func (c *cache) get(key string) (value ByteView, ok bool) {
 	return vi.(ByteView), true
 }
 
+func (c *cache) remove(key string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.lru != nil {
+		c.lru.Remove(key)
+	}
+}
+
 func (c *cache) removeOldest() {
 	c.mu.Lock()
 	defer c.mu.Unlock()

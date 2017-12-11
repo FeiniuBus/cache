@@ -12,6 +12,17 @@ type Getter interface {
 	Get(key string, dest Sink) error
 }
 
+// A Remover removes data with key.
+type Remover interface {
+	Remove(key string)
+}
+
+// GetRemover is the interface that groups the basic Get and Remove methods.
+type GetRemover interface {
+	Getter
+	Remover
+}
+
 // A GetterFunc implements Getter with a function.
 type GetterFunc func(key string, dest Sink) error
 
@@ -31,13 +42,6 @@ func GetStore(name string) *Store {
 	s := stores[name]
 	mu.RUnlock()
 	return s
-}
-
-// DestroyStore delete the named store previously created with NewStore
-func DestroyStore(name string) {
-	mu.Lock()
-	delete(stores, name)
-	mu.Unlock()
 }
 
 // NewStore creates a new store
@@ -90,6 +94,11 @@ type Stats struct {
 // Name returns the name of the store.
 func (s *Store) Name() string {
 	return s.name
+}
+
+// Remove removes the provided key from the cache.
+func (s *Store) Remove(key string) {
+	s.cache.remove(key)
 }
 
 // Get is

@@ -8,7 +8,7 @@ import (
 
 var (
 	once        sync.Once
-	stringStore Getter
+	stringStore GetRemover
 	stringc     = make(chan string)
 	cacheFills  AtomicInt
 )
@@ -77,5 +77,30 @@ func TestCaching(t *testing.T) {
 	})
 	if fills != 1 {
 		t.Errorf("expected 1 cache fill; got %d", fills)
+	}
+}
+
+func TestRemove(t *testing.T) {
+	once.Do(testSetup)
+	fills := countFills(func() {
+		for i := 0; i < 10; i++ {
+			var s string
+			if err := stringStore.Get("TestCaching-key", StringSink(&s)); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		stringStore.Remove("TestCaching-key")
+
+		for i := 0; i < 10; i++ {
+			var s string
+			if err := stringStore.Get("TestCaching-key", StringSink(&s)); err != nil {
+				t.Fatal(err)
+			}
+		}
+	})
+
+	if fills != 2 {
+		t.Errorf("expected 2 cache fill; got %d", fills)
 	}
 }
