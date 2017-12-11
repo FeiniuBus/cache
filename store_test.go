@@ -85,16 +85,16 @@ func TestRemove(t *testing.T) {
 	fills := countFills(func() {
 		for i := 0; i < 10; i++ {
 			var s string
-			if err := stringStore.Get("TestCaching-key", StringSink(&s)); err != nil {
+			if err := stringStore.Get("TestCaching-key1", StringSink(&s)); err != nil {
 				t.Fatal(err)
 			}
 		}
 
-		stringStore.Remove("TestCaching-key")
+		stringStore.Remove("TestCaching-key1")
 
 		for i := 0; i < 10; i++ {
 			var s string
-			if err := stringStore.Get("TestCaching-key", StringSink(&s)); err != nil {
+			if err := stringStore.Get("TestCaching-key1", StringSink(&s)); err != nil {
 				t.Fatal(err)
 			}
 		}
