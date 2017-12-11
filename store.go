@@ -33,6 +33,11 @@ func GetStore(name string) *Store {
 	return s
 }
 
+// DestroyStore delete the named store previously created with NewStore
+func DestroyStore(name string) {
+	delete(stores, name)
+}
+
 // NewStore creates a new store
 func NewStore(name string, cacheBytes int64, getter Getter) *Store {
 	if getter == nil {
