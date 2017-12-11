@@ -35,7 +35,9 @@ func GetStore(name string) *Store {
 
 // DestroyStore delete the named store previously created with NewStore
 func DestroyStore(name string) {
+	mu.Lock()
 	delete(stores, name)
+	mu.Unlock()
 }
 
 // NewStore creates a new store
